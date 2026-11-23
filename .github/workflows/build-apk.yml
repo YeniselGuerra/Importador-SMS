@@ -1,0 +1,61 @@
+name: Compilar APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v5
+
+      - name: Instalar Java 17 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Descomprimir el proyecto
+        run: |
+          Z=$(ls *.zip | head -n1)
+          echo "Descomprimiendo $Z"
+          unzip -oq "$Z"
+
+      - name: Compilar APK (debug)
+        working-directory: ImportadorSMS
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+
+      - name: Mostrar el error en el resumen (solo si falla)
+        if: failure()
+        run: |
+          {
+            echo "### Qué falló en la compilación (últimas 60 líneas)"
+            echo ''
+            echo '```text'
+            tail -n 60 /tmp/build.log | sed -e 's/\x1b\[[0-9;]*m//g'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Guardar el log completo (solo si falla)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-fallo
+          path: /tmp/build.log
+
+      - name: Renombrar el APK
+        if: success()
+        working-directory: ImportadorSMS
+        run: cp app/build/outputs/apk/debug/app-debug.apk ImportadorSMS.apk
+
+      - name: Publicar el APK como artefacto
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImportadorSMS-apk
+          path: ImportadorSMS/ImportadorSMS.apk
